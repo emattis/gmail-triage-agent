@@ -12,6 +12,7 @@ router = APIRouter()
 
 SCOPES = [
     "https://www.googleapis.com/auth/gmail.readonly",
+    "https://www.googleapis.com/auth/gmail.modify",
 ]
 
 def _env(name: str) -> str:

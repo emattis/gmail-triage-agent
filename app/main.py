@@ -5,6 +5,7 @@ from app.oauth import router as oauth_router
 from app.gmail import router as gmail_router
 from app.inbox import router as inbox_router
 from app.triage_api import router as triage_router
+from app.triage_ui import router as triage_ui_router
 
 from google import genai
 
@@ -18,6 +19,8 @@ app.include_router(oauth_router)
 app.include_router(gmail_router)
 app.include_router(inbox_router)
 app.include_router(triage_router)
+app.include_router(triage_ui_router)
+
 
 
 @app.get("/gemini/models")
