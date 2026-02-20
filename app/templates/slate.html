@@ -47,6 +47,7 @@
             <input type="checkbox" name="approve_ids" value="{{ item.message_id }}">
             Approve
           </label>
+            <input type="hidden" name="cat_{{ item.message_id }}" value="{{ item.category }}">
           <span class="meta">Message ID: {{ item.message_id }}</span>
         </div>
 
@@ -59,6 +60,9 @@
 
       <button class="btn" type="submit">Save approvals (no Gmail actions yet)</button>
       <a class="btn secondary" href="/triage/ui">Refresh slate</a>
+    </form>
+    <form method="post" action="/triage/apply" style="margin-top: 14px;">
+      <button class="btn" type="submit">Apply approved actions (label + archive)</button>
     </form>
   </body>
 </html>
