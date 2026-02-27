@@ -26,6 +26,7 @@
     <p><b>Summary:</b> {{ slate.batch_summary }}</p>
 
     <form method="post" action="/triage/approve">
+      <input type="hidden" name="batch_id" value="{{ batch_id }}">
       {% for item in slate["items"] %}
       <div class="row">
         <div>

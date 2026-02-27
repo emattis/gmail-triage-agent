@@ -6,6 +6,8 @@ from app.gmail import router as gmail_router
 from app.inbox import router as inbox_router
 from app.triage_api import router as triage_router
 from app.triage_ui import router as triage_ui_router
+from app.db import init_db
+
 
 from google import genai
 
@@ -15,13 +17,14 @@ import os
 
 app = FastAPI(title="Gmail Triage Agent (Local)")
 
+# Creates data/app.db + tables
+init_db()
+
 app.include_router(oauth_router)
 app.include_router(gmail_router)
 app.include_router(inbox_router)
 app.include_router(triage_router)
 app.include_router(triage_ui_router)
-
-
 
 @app.get("/gemini/models")
 def list_models():
