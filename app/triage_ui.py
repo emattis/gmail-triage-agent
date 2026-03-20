@@ -71,8 +71,8 @@ async def triage_approve(request: Request):
 
 # ── Approvals view ────────────────────────────────────────────────────────────
 
-@router.get("/triage/approvals")
-def view_approvals(batch_id: str | None = None):
+@router.get("/triage/approvals", response_class=HTMLResponse)
+def view_approvals(request: Request, batch_id: str | None = None):
     with get_conn() as conn:
         if not batch_id:
             batch_id = require_latest_batch_id(conn)
@@ -86,22 +86,23 @@ def view_approvals(batch_id: str | None = None):
             (batch_id,),
         ).fetchall()
 
-    return {
-        "batch_id": batch_id,
-        "approvals": {
-            r["message_id"]: {
-                "approved": bool(r["approved"]),
-                "edited_draft_body": r["edited_draft_body"],
-                "category": r["category"],
-            }
-            for r in rows
-        },
+    approvals = {
+        r["message_id"]: {
+            "approved": bool(r["approved"]),
+            "edited_draft_body": r["edited_draft_body"],
+            "category": r["category"],
+        }
+        for r in rows
     }
+    return templates.TemplateResponse(
+        "approvals.html",
+        {"request": request, "batch_id": batch_id, "approvals": approvals},
+    )
 
 
 # ── Apply to Gmail ────────────────────────────────────────────────────────────
 
-@router.post("/triage/apply")
+@router.post("/triage/apply", response_class=HTMLResponse)
 async def apply_approved_actions(request: Request):
     form = await request.form()
     batch_id = form.get("batch_id")
@@ -161,7 +162,16 @@ async def apply_approved_actions(request: Request):
         if not rows:
             skipped.append({"batch_id": batch_id, "reason": "no_approved_unapplied_items"})
 
-    return {"batch_id": batch_id, "applied": applied, "skipped": skipped, "errors": errors}
+    return templates.TemplateResponse(
+        "applied.html",
+        {
+            "request": request,
+            "batch_id": batch_id,
+            "applied": applied,
+            "skipped": skipped,
+            "errors": errors,
+        },
+    )
 
 
 # ── Inbox Summary (HTMX fragment) ─────────────────────────────────────────────
