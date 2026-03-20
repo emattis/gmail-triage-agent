@@ -239,6 +239,20 @@
     .btn--send:hover { background: #047857; }
     .btn--sm { padding: 5px 10px; font-size: 12px; }
 
+    /* Category select */
+    .cat-select {
+      margin-top: 12px;
+      padding: 5px 10px;
+      border-radius: 8px;
+      border: 1px solid #E2E8F0;
+      font-size: 12px; font-weight: 500;
+      font-family: inherit;
+      background: #F8FAFC; color: #374151;
+      cursor: pointer; outline: none;
+      transition: border-color 0.15s;
+    }
+    .cat-select:focus { border-color: #94A3B8; }
+
     /* Footer */
     .footer-bar {
       position: fixed; bottom: 0; left: 0; right: 0;
@@ -261,6 +275,7 @@
       <span class="badge">{{ slate["items"]|length }} emails</span>
     </div>
     <div class="header-right">
+      <a href="/auto-archive" class="btn btn--outline btn--sm">Auto-Archive</a>
       <button
         class="btn btn--outline btn--sm"
         hx-get="/triage/summary"
@@ -399,8 +414,12 @@
           </div>
           {% endif %}
 
-          <!-- Hidden category -->
-          <input type="hidden" name="cat_{{ mid }}" value="{{ item.category }}">
+          <!-- Category override -->
+          <select name="cat_{{ mid }}" class="cat-select" data-mid="{{ mid }}" onchange="updateCardCategory(this)">
+            {% for c in ['ARCHIVE', 'READ_LATER', 'REPLY', 'TASK', 'DELEGATE'] %}
+            <option value="{{ c }}" {% if c == item.category %}selected{% endif %}>{{ c }}</option>
+            {% endfor %}
+          </select>
 
         </div>
       </div>
@@ -426,6 +445,15 @@
     function toggleSchedule(mid) {
       const el = document.getElementById('schedule-picker-' + mid);
       el.classList.toggle('open');
+    }
+
+    const CAT_BORDERS = {
+      ARCHIVE: '#94A3B8', READ_LATER: '#60A5FA',
+      REPLY: '#34D399', TASK: '#FBBF24', DELEGATE: '#A78BFA'
+    };
+    function updateCardCategory(sel) {
+      const card = document.getElementById('card-' + sel.dataset.mid);
+      card.className = 'card card--' + sel.value.toLowerCase();
     }
   </script>
 

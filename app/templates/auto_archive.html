@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Auto-Archive Rules — Gmail Agent</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #F8FAFC; color: #0F172A;
+      font-size: 14px; line-height: 1.5; min-height: 100vh;
+    }
+    .header {
+      background: #FFFFFF; border-bottom: 1px solid #E2E8F0;
+      padding: 14px 24px; display: flex; align-items: center;
+      justify-content: space-between; position: sticky; top: 0; z-index: 10;
+    }
+    .header-left { display: flex; align-items: center; gap: 10px; }
+    .app-title { font-size: 16px; font-weight: 600; letter-spacing: -0.02em; }
+    .badge {
+      padding: 2px 8px; border-radius: 6px; font-size: 11px; font-weight: 500;
+      background: #F1F5F9; color: #64748B; text-transform: uppercase; letter-spacing: 0.03em;
+    }
+
+    .main { max-width: 820px; margin: 0 auto; padding: 24px 20px 80px; }
+
+    .page-header { margin-bottom: 24px; }
+    .page-header h2 { font-size: 18px; font-weight: 600; margin-bottom: 4px; }
+    .page-header p { font-size: 13px; color: #64748B; }
+
+    .scan-bar {
+      background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 12px;
+      padding: 16px 20px; margin-bottom: 20px;
+      display: flex; align-items: center; justify-content: space-between; gap: 16px;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+    }
+    .scan-bar p { font-size: 13px; color: #64748B; }
+    .scan-controls { display: flex; align-items: center; gap: 10px; }
+    .scan-controls label { font-size: 12px; color: #64748B; }
+    .scan-controls input[type=number] {
+      width: 64px; padding: 5px 8px; border: 1px solid #E2E8F0;
+      border-radius: 7px; font-size: 13px; outline: none; font-family: inherit;
+    }
+
+    .rules-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    @media (max-width: 640px) { .rules-grid { grid-template-columns: 1fr; } }
+
+    .rule-card {
+      background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 12px;
+      padding: 16px 18px; box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+    }
+    .rule-card.full-width { grid-column: 1 / -1; }
+    .rule-card-header { margin-bottom: 8px; }
+    .rule-card-title {
+      font-size: 13px; font-weight: 600; color: #0F172A; margin-bottom: 2px;
+    }
+    .rule-card-desc { font-size: 11px; color: #94A3B8; }
+
+    textarea {
+      width: 100%; min-height: 140px;
+      border: 1px solid #E2E8F0; border-radius: 8px;
+      padding: 10px 12px; font-size: 12px; font-family: inherit;
+      color: #374151; resize: vertical; line-height: 1.6; outline: none;
+      transition: border-color 0.15s;
+    }
+    textarea:focus { border-color: #94A3B8; }
+    .whitelist-textarea { min-height: 80px; }
+
+    .footer-bar {
+      position: fixed; bottom: 0; left: 0; right: 0;
+      background: rgba(255,255,255,0.95); backdrop-filter: blur(8px);
+      border-top: 1px solid #E2E8F0; padding: 12px 24px;
+      display: flex; justify-content: center; gap: 10px; z-index: 100;
+    }
+    .btn {
+      padding: 8px 16px; border-radius: 8px; font-size: 13px; font-weight: 500;
+      cursor: pointer; border: 1px solid transparent; text-decoration: none;
+      display: inline-flex; align-items: center; gap: 4px; transition: all 0.15s;
+    }
+    .btn--primary { background: #0F172A; color: #fff; border-color: #0F172A; }
+    .btn--primary:hover { background: #1E293B; }
+    .btn--outline { background: #fff; color: #374151; border-color: #D1D5DB; }
+    .btn--outline:hover { background: #F9FAFB; }
+    .btn--scan { background: #2563EB; color: #fff; border-color: #2563EB; }
+    .btn--scan:hover { background: #1D4ED8; }
+  </style>
+</head>
+<body>
+
+  <header class="header">
+    <div class="header-left">
+      <span class="app-title">Gmail Triage</span>
+      <span class="badge">Auto-Archive</span>
+    </div>
+    <a href="/triage/ui" class="btn btn--outline" style="padding:5px 12px;font-size:12px;">← Triage</a>
+  </header>
+
+  <main class="main">
+    <div class="page-header">
+      <h2>Auto-Archive Rules</h2>
+      <p>Emails matching any rule below will be flagged for archiving. Whitelist entries always win.</p>
+    </div>
+
+    <!-- Scan bar -->
+    <div class="scan-bar">
+      <p>Scan your inbox and review matches before archiving.</p>
+      <form method="get" action="/auto-archive/scan" class="scan-controls">
+        <label>Emails to scan:
+          <input type="number" name="max_results" value="50" min="5" max="200">
+        </label>
+        <button type="submit" class="btn btn--scan">Scan Inbox ↗</button>
+      </form>
+    </div>
+
+    <!-- Rules form -->
+    <form method="post" action="/auto-archive/save-rules" id="rules-form">
+      <div class="rules-grid">
+
+        <div class="rule-card">
+          <div class="rule-card-header">
+            <div class="rule-card-title">Sender Domains</div>
+            <div class="rule-card-desc">Matches if the sender's email contains this domain (one per line)</div>
+          </div>
+          <textarea name="sender_domains">{{ rules.sender_domains | join('\n') }}</textarea>
+        </div>
+
+        <div class="rule-card">
+          <div class="rule-card-header">
+            <div class="rule-card-title">Sender Keywords</div>
+            <div class="rule-card-desc">Matches if the sender address contains this string (one per line)</div>
+          </div>
+          <textarea name="sender_keywords">{{ rules.sender_keywords | join('\n') }}</textarea>
+        </div>
+
+        <div class="rule-card full-width">
+          <div class="rule-card-header">
+            <div class="rule-card-title">Subject Keywords</div>
+            <div class="rule-card-desc">Matches if the email subject contains this string (one per line)</div>
+          </div>
+          <textarea name="subject_keywords">{{ rules.subject_keywords | join('\n') }}</textarea>
+        </div>
+
+        <div class="rule-card full-width">
+          <div class="rule-card-header">
+            <div class="rule-card-title">Whitelist</div>
+            <div class="rule-card-desc">Senders matching any of these strings will never be auto-archived, even if other rules match (one per line)</div>
+          </div>
+          <textarea name="whitelist" class="whitelist-textarea">{{ rules.whitelist | join('\n') }}</textarea>
+        </div>
+
+      </div>
+    </form>
+  </main>
+
+  <div class="footer-bar">
+    <button type="submit" form="rules-form" class="btn btn--primary">Save Rules</button>
+    <a href="/triage/ui" class="btn btn--outline">← Back to Triage</a>
+  </div>
+
+</body>
+</html>

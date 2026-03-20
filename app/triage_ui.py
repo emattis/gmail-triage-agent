@@ -78,7 +78,7 @@ def view_approvals(request: Request, batch_id: str | None = None):
             batch_id = require_latest_batch_id(conn)
         rows = conn.execute(
             """
-            SELECT message_id, approved, edited_draft_body, category
+            SELECT message_id, approved, edited_draft_body, category, subject, sender
             FROM triage_items
             WHERE batch_id=? AND approved=1
             ORDER BY id DESC
@@ -91,6 +91,8 @@ def view_approvals(request: Request, batch_id: str | None = None):
             "approved": bool(r["approved"]),
             "edited_draft_body": r["edited_draft_body"],
             "category": r["category"],
+            "subject": r["subject"] or "(No subject)",
+            "sender": r["sender"] or "",
         }
         for r in rows
     }
