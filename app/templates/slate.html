@@ -1,69 +1,433 @@
 <!doctype html>
-<html>
-  <head>
-    <meta charset="utf-8" />
-    <title>Triage Slate</title>
-    <style>
-      body { font-family: system-ui, -apple-system, sans-serif; margin: 24px; max-width: 920px; }
-      .top { display: flex; gap: 12px; align-items: center; }
-      .row { border: 1px solid #ddd; border-radius: 12px; padding: 14px; margin: 12px 0; }
-      .meta { color: #666; font-size: 12px; margin-top: 8px; line-height: 1.4; }
-      .pill { display: inline-block; padding: 2px 10px; border-radius: 999px; border: 1px solid #ddd; font-size: 12px; margin-right: 6px; }
-      .reason { margin-top: 8px; }
-      textarea { width: 100%; height: 130px; margin-top: 8px; }
-      .actions { margin-top: 10px; display: flex; gap: 10px; align-items: center; }
-      .btn { padding: 10px 14px; border-radius: 10px; border: 1px solid #111; background: #111; color: #fff; cursor: pointer; }
-      .btn.secondary { background: #fff; color: #111; border: 1px solid #ddd; text-decoration: none; }
-    </style>
-  </head>
-  <body>
-    <div class="top">
-      <h2 style="margin:0;">Triage Slate</h2>
-      <span class="pill">mode: {{ mode }}</span>
-      <span class="pill">items: {{ slate["items"]|length }}</span>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Triage — Gmail Agent</title>
+  <script src="https://unpkg.com/htmx.org@2.0.3" crossorigin="anonymous"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #F8FAFC;
+      color: #0F172A;
+      min-height: 100vh;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    /* ── Header ── */
+    .header {
+      background: #FFFFFF;
+      border-bottom: 1px solid #E2E8F0;
+      padding: 14px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    .header-left { display: flex; align-items: center; gap: 10px; }
+    .app-title { font-size: 16px; font-weight: 600; letter-spacing: -0.02em; }
+    .badge {
+      padding: 2px 8px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 500;
+      background: #F1F5F9;
+      color: #64748B;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+    .header-right { display: flex; gap: 8px; align-items: center; }
+
+    /* ── Summary panel ── */
+    .summary-panel {
+      background: #FEFCE8;
+      border: 1px solid #FDE68A;
+      border-radius: 12px;
+      padding: 18px 20px;
+      position: relative;
+    }
+    .summary-panel--error { background: #FEF2F2; border-color: #FECACA; }
+    .summary-close {
+      position: absolute; top: 10px; right: 14px;
+      background: none; border: none; font-size: 18px;
+      cursor: pointer; color: #92400E; line-height: 1;
+    }
+    .summary-headline {
+      font-size: 14px; font-weight: 600; color: #78350F; margin-bottom: 10px;
+    }
+    .summary-cols { display: flex; gap: 24px; flex-wrap: wrap; }
+    .summary-section-title {
+      font-size: 11px; font-weight: 600; text-transform: uppercase;
+      letter-spacing: 0.05em; color: #92400E; margin-bottom: 6px;
+    }
+    .summary-list { padding-left: 16px; }
+    .summary-list li { font-size: 13px; color: #78350F; margin-bottom: 3px; }
+    .summary-footer { font-size: 11px; color: #A16207; margin-top: 10px; }
+
+    /* ── Loading spinner ── */
+    .htmx-indicator { display: none; font-size: 12px; color: #94A3B8; }
+    .htmx-request .htmx-indicator { display: inline; }
+
+    /* ── Main ── */
+    .main {
+      max-width: 820px;
+      margin: 0 auto;
+      padding: 20px 20px 90px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    #summary-target:not(:empty) { margin-bottom: 2px; }
+
+    .batch-summary {
+      font-size: 13px;
+      color: #64748B;
+      padding: 10px 14px;
+      background: #F1F5F9;
+      border-radius: 8px;
+    }
+
+    /* ── Card ── */
+    .card {
+      background: #FFFFFF;
+      border: 1px solid #E2E8F0;
+      border-left: 4px solid #CBD5E1;
+      border-radius: 12px;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+      overflow: hidden;
+      transition: box-shadow 0.15s;
+    }
+    .card:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.07); }
+
+    .card--archive   { border-left-color: #94A3B8; }
+    .card--read_later { border-left-color: #60A5FA; }
+    .card--reply     { border-left-color: #34D399; }
+    .card--task      { border-left-color: #FBBF24; }
+    .card--delegate  { border-left-color: #A78BFA; }
+
+    .card-inner { padding: 16px 18px; }
+
+    /* Card top row */
+    .card-top {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+    .pill {
+      padding: 3px 9px;
+      border-radius: 20px;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+    .pill--archive   { background: #F1F5F9; color: #64748B; }
+    .pill--read_later { background: #DBEAFE; color: #1E40AF; }
+    .pill--reply     { background: #D1FAE5; color: #065F46; }
+    .pill--task      { background: #FEF3C7; color: #92400E; }
+    .pill--delegate  { background: #EDE9FE; color: #5B21B6; }
+
+    .confidence-text { font-size: 11px; color: #94A3B8; }
+
+    .approve-label {
+      margin-left: auto;
+      display: flex; align-items: center; gap: 5px;
+      font-size: 13px; font-weight: 500; color: #374151; cursor: pointer;
+    }
+    .approve-checkbox { width: 15px; height: 15px; accent-color: #10B981; cursor: pointer; }
+
+    /* Card body */
+    .card-subject {
+      font-size: 15px; font-weight: 600; color: #0F172A;
+      margin-bottom: 4px; line-height: 1.35;
+    }
+    .card-meta {
+      font-size: 12px; color: #64748B;
+      display: flex; gap: 12px; flex-wrap: wrap;
+      margin-bottom: 8px;
+    }
+    .card-snippet {
+      font-size: 13px; color: #475569; line-height: 1.5;
+      margin-bottom: 6px;
+    }
+    .card-reason { font-size: 12px; color: #94A3B8; font-style: italic; }
+
+    /* Task panel */
+    .task-panel {
+      background: #FFFBEB;
+      border: 1px solid #FDE68A;
+      border-radius: 8px;
+      padding: 11px 14px;
+      margin-top: 10px;
+    }
+    .task-label {
+      font-size: 10px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.05em; color: #B45309; margin-bottom: 4px;
+    }
+    .task-title { font-size: 13px; font-weight: 600; color: #78350F; margin-bottom: 2px; }
+    .task-meta { font-size: 12px; color: #B45309; }
+
+    /* Draft section */
+    .draft-section {
+      margin-top: 12px;
+      border-top: 1px solid #F1F5F9;
+      padding-top: 12px;
+    }
+    .draft-label {
+      font-size: 11px; font-weight: 600; text-transform: uppercase;
+      letter-spacing: 0.04em; color: #94A3B8; margin-bottom: 6px;
+    }
+    .draft-textarea {
+      width: 100%; min-height: 96px;
+      border: 1px solid #E2E8F0; border-radius: 8px;
+      padding: 10px 12px;
+      font-size: 13px; font-family: inherit; color: #0F172A;
+      resize: vertical; line-height: 1.5;
+      margin-bottom: 10px; outline: none;
+      transition: border-color 0.15s;
+    }
+    .draft-textarea:focus { border-color: #94A3B8; }
+
+    /* Send actions */
+    .send-actions {
+      display: flex; gap: 7px; align-items: center; flex-wrap: wrap;
+    }
+    .send-status { font-size: 13px; font-weight: 500; }
+    .status--success { color: #059669; }
+    .status--error   { color: #DC2626; }
+
+    .schedule-picker {
+      display: none;
+      gap: 8px; align-items: center; flex-wrap: wrap;
+      margin-top: 8px;
+    }
+    .schedule-picker.open { display: flex; }
+    .datetime-input {
+      border: 1px solid #E2E8F0; border-radius: 8px;
+      padding: 6px 10px; font-size: 13px; outline: none;
+      font-family: inherit;
+    }
+
+    /* Buttons */
+    .btn {
+      padding: 6px 13px;
+      border-radius: 8px;
+      font-size: 13px; font-weight: 500;
+      cursor: pointer; border: 1px solid transparent;
+      transition: all 0.15s;
+      text-decoration: none;
+      display: inline-flex; align-items: center; gap: 4px;
+      white-space: nowrap;
+    }
+    .btn--primary {
+      background: #0F172A; color: #FFFFFF; border-color: #0F172A;
+    }
+    .btn--primary:hover { background: #1E293B; }
+    .btn--outline {
+      background: #FFFFFF; color: #374151; border-color: #D1D5DB;
+    }
+    .btn--outline:hover { background: #F9FAFB; }
+    .btn--send {
+      background: #059669; color: #FFFFFF; border-color: #059669;
+    }
+    .btn--send:hover { background: #047857; }
+    .btn--sm { padding: 5px 10px; font-size: 12px; }
+
+    /* Footer */
+    .footer-bar {
+      position: fixed; bottom: 0; left: 0; right: 0;
+      background: rgba(255,255,255,0.95);
+      backdrop-filter: blur(8px);
+      border-top: 1px solid #E2E8F0;
+      padding: 12px 24px;
+      display: flex; justify-content: center; gap: 10px;
+      z-index: 100;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ── Header ── -->
+  <header class="header">
+    <div class="header-left">
+      <span class="app-title">Gmail Triage</span>
+      <span class="badge">{{ mode }}</span>
+      <span class="badge">{{ slate["items"]|length }} emails</span>
     </div>
+    <div class="header-right">
+      <button
+        class="btn btn--outline btn--sm"
+        hx-get="/triage/summary"
+        hx-target="#summary-target"
+        hx-swap="innerHTML"
+        hx-indicator="#summary-loading"
+      >
+        Summarize
+        <span id="summary-loading" class="htmx-indicator">…</span>
+      </button>
+      <a href="/triage/ui" class="btn btn--outline btn--sm">↺ Refresh</a>
+    </div>
+  </header>
 
-    <p><b>Summary:</b> {{ slate.batch_summary }}</p>
+  <!-- ── Main ── -->
+  <main class="main">
 
-    <form method="post" action="/triage/approve">
+    <!-- Summary injection target -->
+    <div id="summary-target"></div>
+
+    {% if slate.batch_summary %}
+    <p class="batch-summary">{{ slate.batch_summary }}</p>
+    {% endif %}
+
+    <!-- Approve form -->
+    <form id="triage-form" method="post" action="/triage/approve">
       <input type="hidden" name="batch_id" value="{{ batch_id }}">
+
       {% for item in slate["items"] %}
-      <div class="row">
-        <div>
-          <span class="pill">{{ item.category }}</span>
-          <span class="pill">conf {{ "%.2f"|format(item.confidence) }}</span>
+      {% set mid = item.message_id %}
+      {% set cat = (item.category or "ARCHIVE")|lower %}
+
+      <div class="card card--{{ cat }}" id="card-{{ mid }}">
+        <div class="card-inner">
+
+          <!-- Top row -->
+          <div class="card-top">
+            <span class="pill pill--{{ cat }}">{{ item.category }}</span>
+            <span class="confidence-text">{{ "%.0f"|format((item.confidence or 0) * 100) }}% confidence</span>
+            <label class="approve-label">
+              <input type="checkbox" name="approve_ids" value="{{ mid }}" class="approve-checkbox">
+              Approve
+            </label>
+          </div>
+
+          <!-- Subject -->
+          <h3 class="card-subject">{{ item.subject or "(No subject)" }}</h3>
+
+          <!-- Meta -->
+          <div class="card-meta">
+            <span>{{ item.from or item.sender or "" }}</span>
+            <span>{{ item.date or "" }}</span>
+          </div>
+
+          <!-- Snippet -->
+          {% if item.snippet %}
+          <p class="card-snippet">{{ item.snippet }}</p>
+          {% endif %}
+
+          <!-- Reason -->
+          {% if item.reason %}
+          <p class="card-reason">{{ item.reason }}</p>
+          {% endif %}
+
+          <!-- Task suggestion (read-only) -->
+          {% if item.task_suggestion and item.task_suggestion is mapping %}
+          <div class="task-panel">
+            <div class="task-label">📋 Task Suggestion</div>
+            <div class="task-title">{{ item.task_suggestion.title }}</div>
+            {% if item.task_suggestion.due %}
+            <div class="task-meta">Due: {{ item.task_suggestion.due }}</div>
+            {% endif %}
+            {% if item.task_suggestion.notes %}
+            <div class="task-meta">{{ item.task_suggestion.notes }}</div>
+            {% endif %}
+          </div>
+          {% endif %}
+
+          <!-- Draft reply + send options -->
+          {% if item.draft_reply %}
+          <div class="draft-section">
+            <div class="draft-label">Draft Reply</div>
+            <textarea
+              id="draft-{{ mid }}"
+              name="draft_{{ mid }}"
+              class="draft-textarea"
+            >{% if item.draft_reply is mapping %}{{ item.draft_reply.body or "" }}{% else %}{{ item.draft_reply }}{% endif %}</textarea>
+
+            <div class="send-actions">
+              <button
+                type="button"
+                class="btn btn--send btn--sm"
+                hx-post="/triage/send-now"
+                hx-vals='{"message_id": "{{ mid }}", "batch_id": "{{ batch_id }}"}'
+                hx-include="#draft-{{ mid }}"
+                hx-target="#send-status-{{ mid }}"
+                hx-swap="innerHTML"
+              >Send Now</button>
+
+              <button
+                type="button"
+                class="btn btn--outline btn--sm"
+                onclick="toggleSchedule('{{ mid }}')"
+              >Schedule</button>
+
+              <button
+                type="button"
+                class="btn btn--outline btn--sm"
+                hx-post="/triage/save-draft"
+                hx-vals='{"message_id": "{{ mid }}", "batch_id": "{{ batch_id }}"}'
+                hx-include="#draft-{{ mid }}"
+                hx-target="#send-status-{{ mid }}"
+                hx-swap="innerHTML"
+              >Save Draft</button>
+
+              <span id="send-status-{{ mid }}" class="send-status"></span>
+            </div>
+
+            <!-- Schedule picker -->
+            <div id="schedule-picker-{{ mid }}" class="schedule-picker">
+              <input
+                type="datetime-local"
+                id="sched-time-{{ mid }}"
+                class="datetime-input"
+              >
+              <button
+                type="button"
+                class="btn btn--send btn--sm"
+                hx-post="/triage/schedule-send"
+                hx-vals='js:{message_id: "{{ mid }}", batch_id: "{{ batch_id }}", send_at: document.getElementById("sched-time-{{ mid }}").value}'
+                hx-include="#draft-{{ mid }}"
+                hx-target="#send-status-{{ mid }}"
+                hx-swap="innerHTML"
+              >Confirm</button>
+            </div>
+          </div>
+          {% endif %}
+
+          <!-- Hidden category -->
+          <input type="hidden" name="cat_{{ mid }}" value="{{ item.category }}">
+
         </div>
-
-        <h3 style="margin:10px 0 6px 0;">{{ item.subject }}</h3>
-
-        <div class="meta">
-          <div><b>From:</b> {{ item.from }}</div>
-          <div><b>Date:</b> {{ item.date }}</div>
-        </div>
-
-        <div class="reason"><b>Why:</b> {{ item.reason }}</div>
-
-        <div class="actions">
-          <label>
-            <input type="checkbox" name="approve_ids" value="{{ item.message_id }}">
-            Approve
-          </label>
-            <input type="hidden" name="cat_{{ item.message_id }}" value="{{ item.category }}">
-          <span class="meta">Message ID: {{ item.message_id }}</span>
-        </div>
-
-        {% if item.draft_reply %}
-          <div class="meta"><b>Draft reply (editable):</b></div>
-          <textarea name="draft_{{ item.message_id }}">{{ item.draft_reply.body }}</textarea>
-        {% endif %}
       </div>
       {% endfor %}
 
-      <button class="btn" type="submit">Save approvals (no Gmail actions yet)</button>
-      <a class="btn secondary" href="/triage/ui">Refresh slate</a>
     </form>
-    <form method="post" action="/triage/apply" style="margin-top: 14px;">
-      <button class="btn" type="submit">Apply approved actions (label + archive)</button>
+  </main>
+
+  <!-- ── Footer ── -->
+  <div class="footer-bar">
+    <button type="submit" form="triage-form" class="btn btn--primary">
+      Save Approvals
+    </button>
+    <form method="post" action="/triage/apply" style="display:contents">
+      <input type="hidden" name="batch_id" value="{{ batch_id }}">
+      <button type="submit" class="btn btn--outline">
+        Apply to Gmail ↗
+      </button>
     </form>
-  </body>
+  </div>
+
+  <script>
+    function toggleSchedule(mid) {
+      const el = document.getElementById('schedule-picker-' + mid);
+      el.classList.toggle('open');
+    }
+  </script>
+
+</body>
 </html>

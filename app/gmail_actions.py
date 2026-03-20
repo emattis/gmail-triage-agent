@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import base64
+from email.mime.text import MIMEText
 from typing import Dict, List
+
 from googleapiclient.discovery import Resource
 
 TRIAGE_LABELS = {
@@ -12,12 +15,14 @@ TRIAGE_LABELS = {
     "DELEGATE": "Triage/Now",
 }
 
+
 def _list_labels(service: Resource) -> Dict[str, str]:
     resp = service.users().labels().list(userId="me").execute()
     out: Dict[str, str] = {}
     for lab in resp.get("labels", []):
         out[lab["name"]] = lab["id"]
     return out
+
 
 def get_or_create_label(service: Resource, name: str) -> str:
     labels = _list_labels(service)
@@ -32,11 +37,13 @@ def get_or_create_label(service: Resource, name: str) -> str:
     created = service.users().labels().create(userId="me", body=body).execute()
     return created["id"]
 
+
 def ensure_triage_labels(service: Resource) -> Dict[str, str]:
     label_ids: Dict[str, str] = {}
     for name in set(TRIAGE_LABELS.values()):
         label_ids[name] = get_or_create_label(service, name)
     return label_ids
+
 
 def apply_triage_action(
     service: Resource,
@@ -52,10 +59,44 @@ def apply_triage_action(
     add_label_ids: List[str] = [add_label_id]
     remove_label_ids: List[str] = []
 
-    # Archive only for ARCHIVE/READ_LATER
     if archive and category in ("ARCHIVE", "READ_LATER"):
-        remove_label_ids.append("INBOX")  # system label id is literally "INBOX"
+        remove_label_ids.append("INBOX")
 
     body = {"addLabelIds": add_label_ids, "removeLabelIds": remove_label_ids}
     return service.users().messages().modify(userId="me", id=message_id, body=body).execute()
 
+
+def send_reply(
+    service: Resource,
+    to: str,
+    subject: str,
+    body: str,
+    thread_id: str | None = None,
+) -> dict:
+    message = MIMEText(body, "plain", "utf-8")
+    message["to"] = to
+    message["subject"] = subject
+    raw = base64.urlsafe_b64encode(message.as_bytes()).decode("utf-8")
+    msg_body: dict = {"raw": raw}
+    if thread_id:
+        msg_body["threadId"] = thread_id
+    return service.users().messages().send(userId="me", body=msg_body).execute()
+
+
+def create_draft(
+    service: Resource,
+    to: str,
+    subject: str,
+    body: str,
+    thread_id: str | None = None,
+) -> dict:
+    message = MIMEText(body, "plain", "utf-8")
+    message["to"] = to
+    message["subject"] = subject
+    raw = base64.urlsafe_b64encode(message.as_bytes()).decode("utf-8")
+    msg_body: dict = {"raw": raw}
+    if thread_id:
+        msg_body["threadId"] = thread_id
+    return service.users().drafts().create(
+        userId="me", body={"message": msg_body}
+    ).execute()

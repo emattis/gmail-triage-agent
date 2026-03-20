@@ -1,53 +1,55 @@
 import json
+import html as _html
+from datetime import datetime
+
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
 from app.triage_api import run_triage
 from app.gmail_client import get_gmail_service
-from app.gmail_actions import ensure_triage_labels, apply_triage_action
-
-from app.db import get_conn, require_latest_batch_id, now_iso  # <-- add
+from app.gmail_actions import ensure_triage_labels, apply_triage_action, send_reply, create_draft
+from app.inbox import recent_inbox
+from app.db import get_conn, require_latest_batch_id, now_iso
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
 
 
+# ── Main UI ───────────────────────────────────────────────────────────────────
+
 @router.get("/triage/ui", response_class=HTMLResponse)
 def triage_ui(request: Request, max_results: int = 20):
     data = run_triage(max_results=max_results)
-    # Pass batch_id into template so you can include it as a hidden field later
     return templates.TemplateResponse(
         "slate.html",
         {
             "request": request,
             "slate": data["slate"],
-            "mode": data.get("mode", "llm"),
+            "mode": data.get("mode", "mock"),
             "batch_id": data.get("batch_id"),
         },
     )
 
 
+# ── Approve ───────────────────────────────────────────────────────────────────
+
 @router.post("/triage/approve", response_class=HTMLResponse)
 async def triage_approve(request: Request):
     form = await request.form()
     ids = form.getlist("approve_ids")
-
-    # Optional: if you add <input type="hidden" name="batch_id" value="{{ batch_id }}">
     batch_id = form.get("batch_id")
 
-    with get_conn() as conn:
-        if not batch_id:
-            return HTMLResponse(
-                "<h3>Error: missing batch_id. Reload /triage/ui to generate a new batch.</h3>",
-                status_code=400,
-            )
+    if not batch_id:
+        return HTMLResponse(
+            "<h3>Error: missing batch_id. Reload /triage/ui to generate a new batch.</h3>",
+            status_code=400,
+        )
 
-        updated = 0
+    with get_conn() as conn:
         for mid in ids:
             edited = form.get(f"draft_{mid}")
-            category = (form.get(f"cat_{mid}") or "READ_LATER").upper()
-
+            category = (form.get(f"cat_{mid}") or "ARCHIVE").upper()
             conn.execute(
                 """
                 UPDATE triage_items
@@ -56,21 +58,24 @@ async def triage_approve(request: Request):
                 """,
                 (edited, category, batch_id, mid),
             )
-            updated += 1
 
-    return HTMLResponse(
-        f"<h3>Saved {updated} approvals (batch {batch_id}).</h3>"
-        f"<p><a href='/triage/ui'>Back to slate</a></p>"
-        f"<p><a href='/triage/approvals'>View approvals</a></p>"
+    return templates.TemplateResponse(
+        "approved.html",
+        {
+            "request": request,
+            "count": len(ids),
+            "batch_id": batch_id,
+        },
     )
 
+
+# ── Approvals view ────────────────────────────────────────────────────────────
 
 @router.get("/triage/approvals")
 def view_approvals(batch_id: str | None = None):
     with get_conn() as conn:
         if not batch_id:
             batch_id = require_latest_batch_id(conn)
-
         rows = conn.execute(
             """
             SELECT message_id, approved, edited_draft_body, category
@@ -81,19 +86,26 @@ def view_approvals(batch_id: str | None = None):
             (batch_id,),
         ).fetchall()
 
-    approvals = {
-        r["message_id"]: {
-            "approved": bool(r["approved"]),
-            "edited_draft_body": r["edited_draft_body"],
-            "category": r["category"],
-        }
-        for r in rows
+    return {
+        "batch_id": batch_id,
+        "approvals": {
+            r["message_id"]: {
+                "approved": bool(r["approved"]),
+                "edited_draft_body": r["edited_draft_body"],
+                "category": r["category"],
+            }
+            for r in rows
+        },
     }
-    return {"batch_id": batch_id, "approvals": approvals}
 
+
+# ── Apply to Gmail ────────────────────────────────────────────────────────────
 
 @router.post("/triage/apply")
-async def apply_approved_actions(batch_id: str | None = None):
+async def apply_approved_actions(request: Request):
+    form = await request.form()
+    batch_id = form.get("batch_id")
+
     service = get_gmail_service()
     label_ids_by_name = ensure_triage_labels(service)
 
@@ -114,10 +126,8 @@ async def apply_approved_actions(batch_id: str | None = None):
 
         for r in rows:
             msg_id = r["message_id"]
-            category = (r["category"] or "READ_LATER").upper()
-
+            category = (r["category"] or "ARCHIVE").upper()
             try:
-                # Apply label + archive behavior (archives only for ARCHIVE/READ_LATER)
                 apply_triage_action(
                     service=service,
                     message_id=msg_id,
@@ -125,33 +135,25 @@ async def apply_approved_actions(batch_id: str | None = None):
                     label_ids_by_name=label_ids_by_name,
                     archive=True,
                 )
-
-                # Mark applied
                 conn.execute(
                     "UPDATE triage_items SET applied=1, applied_at=? WHERE batch_id=? AND message_id=?",
                     (now_iso(), batch_id, msg_id),
                 )
-
-                # Log for undo (minimal)
-                label_name = {
-                    "ARCHIVE": "Triage/Done",
-                    "READ_LATER": "Triage/ReadLater",
-                }.get(category, "Triage/Now")
+                label_name = {"ARCHIVE": "Triage/Done", "READ_LATER": "Triage/ReadLater"}.get(
+                    category, "Triage/Now"
+                )
                 conn.execute(
                     """
                     INSERT INTO apply_log (batch_id, message_id, category, labels_added_json, removed_inbox, created_at)
                     VALUES (?, ?, ?, ?, ?, ?)
                     """,
                     (
-                        batch_id,
-                        msg_id,
-                        category,
+                        batch_id, msg_id, category,
                         json.dumps([label_name]),
                         1 if category in ("ARCHIVE", "READ_LATER") else 0,
                         now_iso(),
                     ),
                 )
-
                 applied.append({"message_id": msg_id, "category": category})
             except Exception as e:
                 errors.append({"message_id": msg_id, "error": str(e)})
@@ -160,3 +162,172 @@ async def apply_approved_actions(batch_id: str | None = None):
             skipped.append({"batch_id": batch_id, "reason": "no_approved_unapplied_items"})
 
     return {"batch_id": batch_id, "applied": applied, "skipped": skipped, "errors": errors}
+
+
+# ── Inbox Summary (HTMX fragment) ─────────────────────────────────────────────
+
+@router.get("/triage/summary", response_class=HTMLResponse)
+def get_summary(max_results: int = 20):
+    try:
+        inbox = recent_inbox(max_results=max_results)
+        emails = [
+            {
+                "from": it.get("from") or "",
+                "subject": it.get("subject") or "",
+                "snippet": it.get("snippet") or "",
+                "date": it.get("date") or "",
+            }
+            for it in inbox["items"]
+        ]
+
+        from app.llm import summarize_inbox
+        summary = summarize_inbox(emails)
+
+        headline = _html.escape(summary.get("headline", ""))
+        actions_html = "".join(
+            f'<li>{_html.escape(a)}</li>' for a in summary.get("key_actions", [])
+        )
+        fyi_items = summary.get("fyi", [])
+        fyi_html = (
+            f'<div><p class="summary-section-title">FYI</p>'
+            f'<ul class="summary-list">{"".join(f"<li>{_html.escape(f)}</li>" for f in fyi_items)}</ul></div>'
+            if fyi_items else ""
+        )
+        total = summary.get("total", len(emails))
+
+        return HTMLResponse(f"""
+        <div class="summary-panel">
+          <button class="summary-close"
+            onclick="document.getElementById('summary-target').innerHTML=''">×</button>
+          <p class="summary-headline">{headline}</p>
+          <div class="summary-cols">
+            <div>
+              <p class="summary-section-title">Needs Action</p>
+              <ul class="summary-list">{actions_html}</ul>
+            </div>
+            {fyi_html}
+          </div>
+          <p class="summary-footer">{total} emails reviewed</p>
+        </div>
+        """)
+    except Exception as e:
+        return HTMLResponse(
+            f'<div class="summary-panel summary-panel--error">Could not generate summary: {_html.escape(str(e))}</div>'
+        )
+
+
+# ── Send Now (HTMX fragment) ──────────────────────────────────────────────────
+
+@router.post("/triage/send-now", response_class=HTMLResponse)
+async def send_now(request: Request):
+    form = await request.form()
+    message_id = form.get("message_id", "")
+    batch_id = form.get("batch_id", "")
+    body = form.get(f"draft_{message_id}", "").strip()
+
+    if not body:
+        return HTMLResponse('<span class="status status--error">Draft body is empty</span>')
+
+    try:
+        with get_conn() as conn:
+            row = conn.execute(
+                "SELECT sender, subject, thread_id FROM triage_items WHERE batch_id=? AND message_id=?",
+                (batch_id, message_id),
+            ).fetchone()
+
+        if not row:
+            return HTMLResponse('<span class="status status--error">Email not found in DB</span>')
+
+        subject = row["subject"]
+        if not subject.lower().startswith("re:"):
+            subject = f"Re: {subject}"
+
+        service = get_gmail_service()
+        send_reply(service, to=row["sender"], subject=subject, body=body, thread_id=row["thread_id"])
+        return HTMLResponse('<span class="status status--success">✓ Sent</span>')
+    except Exception as e:
+        return HTMLResponse(f'<span class="status status--error">Error: {_html.escape(str(e))}</span>')
+
+
+# ── Save as Draft (HTMX fragment) ─────────────────────────────────────────────
+
+@router.post("/triage/save-draft", response_class=HTMLResponse)
+async def save_as_draft(request: Request):
+    form = await request.form()
+    message_id = form.get("message_id", "")
+    batch_id = form.get("batch_id", "")
+    body = form.get(f"draft_{message_id}", "").strip()
+
+    if not body:
+        return HTMLResponse('<span class="status status--error">Draft body is empty</span>')
+
+    try:
+        with get_conn() as conn:
+            row = conn.execute(
+                "SELECT sender, subject, thread_id FROM triage_items WHERE batch_id=? AND message_id=?",
+                (batch_id, message_id),
+            ).fetchone()
+
+        if not row:
+            return HTMLResponse('<span class="status status--error">Email not found in DB</span>')
+
+        subject = row["subject"]
+        if not subject.lower().startswith("re:"):
+            subject = f"Re: {subject}"
+
+        service = get_gmail_service()
+        create_draft(service, to=row["sender"], subject=subject, body=body, thread_id=row["thread_id"])
+        return HTMLResponse('<span class="status status--success">✓ Saved to Drafts</span>')
+    except Exception as e:
+        return HTMLResponse(f'<span class="status status--error">Error: {_html.escape(str(e))}</span>')
+
+
+# ── Schedule Send (HTMX fragment) ─────────────────────────────────────────────
+
+@router.post("/triage/schedule-send", response_class=HTMLResponse)
+async def schedule_send(request: Request):
+    form = await request.form()
+    message_id = form.get("message_id", "")
+    batch_id = form.get("batch_id", "")
+    send_at = form.get("send_at", "").strip()
+    body = form.get(f"draft_{message_id}", "").strip()
+
+    if not send_at:
+        return HTMLResponse('<span class="status status--error">Please select a send time</span>')
+    if not body:
+        return HTMLResponse('<span class="status status--error">Draft body is empty</span>')
+
+    try:
+        dt = datetime.fromisoformat(send_at)
+        send_at_iso = dt.isoformat()
+    except ValueError:
+        return HTMLResponse('<span class="status status--error">Invalid date/time format</span>')
+
+    try:
+        with get_conn() as conn:
+            row = conn.execute(
+                "SELECT sender, subject, thread_id FROM triage_items WHERE batch_id=? AND message_id=?",
+                (batch_id, message_id),
+            ).fetchone()
+
+            if not row:
+                return HTMLResponse('<span class="status status--error">Email not found in DB</span>')
+
+            subject = row["subject"]
+            if not subject.lower().startswith("re:"):
+                subject = f"Re: {subject}"
+
+            conn.execute(
+                """
+                INSERT INTO scheduled_sends
+                    (batch_id, message_id, to_addr, subject, body, thread_id, send_at, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (batch_id, message_id, row["sender"], subject, body, row["thread_id"],
+                 send_at_iso, now_iso()),
+            )
+
+        formatted = dt.strftime("%b %d at %I:%M %p")
+        return HTMLResponse(f'<span class="status status--success">✓ Scheduled for {_html.escape(formatted)}</span>')
+    except Exception as e:
+        return HTMLResponse(f'<span class="status status--error">Error: {_html.escape(str(e))}</span>')

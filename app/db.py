@@ -5,16 +5,16 @@ import os
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timezone
-from typing import Optional, Tuple
+from typing import Optional
 
 DB_PATH = os.getenv("DB_PATH", "data/app.db")
+
 
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
 def db_path() -> str:
-    # Default to data/app.db (your .gitignore already ignores data/)
     return os.getenv("DB_PATH", "data/app.db")
 
 
@@ -53,6 +53,7 @@ def init_db() -> None:
                 reason TEXT,
                 suggested_labels_json TEXT,
                 draft_reply TEXT,
+                task_suggestion_json TEXT,
                 approved INTEGER DEFAULT 0,
                 edited_draft_body TEXT,
                 applied INTEGER DEFAULT 0,
@@ -77,6 +78,31 @@ def init_db() -> None:
             )
             """
         )
+
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS scheduled_sends (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                batch_id TEXT,
+                message_id TEXT,
+                to_addr TEXT NOT NULL,
+                subject TEXT NOT NULL,
+                body TEXT NOT NULL,
+                thread_id TEXT,
+                send_at TEXT NOT NULL,
+                sent INTEGER DEFAULT 0,
+                sent_at TEXT,
+                error TEXT,
+                created_at TEXT NOT NULL
+            )
+            """
+        )
+
+        # Migrate existing triage_items if task_suggestion_json column is missing
+        try:
+            conn.execute("ALTER TABLE triage_items ADD COLUMN task_suggestion_json TEXT")
+        except sqlite3.OperationalError:
+            pass  # Column already exists
 
 
 @contextmanager
