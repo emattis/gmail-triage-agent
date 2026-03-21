@@ -87,6 +87,100 @@ def _matches(email: dict[str, Any], rules: dict[str, list[str]]) -> str | None:
     return None
 
 
+# ── Pattern suggestions (HTMX fragments) ─────────────────────────────────────
+
+@router.get("/auto-archive/suggestions", response_class=HTMLResponse)
+def get_suggestions():
+    from app.pattern_analyzer import analyze_patterns
+    import html as _h
+
+    result = analyze_patterns()
+    rules = load_rules()
+    existing_domains = {r.lower() for r in rules.get("sender_domains", [])}
+
+    if result["insufficient_data"]:
+        return HTMLResponse(
+            f'<div class="suggestions-empty">'
+            f'Approve at least 10 emails to unlock pattern suggestions '
+            f'({result["total_analyzed"]} so far).'
+            f'</div>'
+        )
+
+    # Filter out suggestions already in rules
+    new_suggestions = [
+        s for s in result["suggestions"]
+        if s["value"].lower() not in existing_domains
+    ]
+
+    if not new_suggestions and not result["insights"]:
+        return HTMLResponse(
+            '<div class="suggestions-empty">No new patterns detected yet — keep triaging!</div>'
+        )
+
+    parts = [
+        f'<div class="suggestions-meta">'
+        f'Based on <strong>{result["total_analyzed"]}</strong> past decisions'
+        f'</div>'
+    ]
+
+    if new_suggestions:
+        parts.append('<div class="suggestions-section-title">Suggested Auto-Archive Rules</div>')
+        for s in new_suggestions:
+            parts.append(f"""
+            <div class="suggestion-row" id="sug-{_h.escape(s['value'])}">
+              <div class="suggestion-info">
+                <span class="suggestion-value">{_h.escape(s['label'])}</span>
+                <span class="suggestion-evidence">{_h.escape(s['evidence'])}</span>
+                <span class="suggestion-confidence">{s['confidence']}% consistent</span>
+              </div>
+              <button
+                class="btn btn--sm btn--outline"
+                hx-post="/auto-archive/accept-suggestion"
+                hx-vals='{{"rule_type": "sender_domains", "value": "{_h.escape(s['value'])}"}}'
+                hx-target="#sug-{_h.escape(s['value'])}"
+                hx-swap="outerHTML"
+              >+ Add Rule</button>
+            </div>
+            """)
+
+    if result["insights"]:
+        parts.append('<div class="suggestions-section-title" style="margin-top:12px;">Patterns Noticed</div>')
+        for ins in result["insights"]:
+            action_color = {"REPLY": "#065F46", "TASK": "#92400E"}.get(ins["action"], "#374151")
+            action_bg = {"REPLY": "#D1FAE5", "TASK": "#FEF3C7"}.get(ins["action"], "#F1F5F9")
+            parts.append(f"""
+            <div class="insight-row">
+              <span class="insight-pill" style="background:{action_bg};color:{action_color};">{ins['action']}</span>
+              <span class="insight-text">{_h.escape(ins['evidence'])}</span>
+            </div>
+            """)
+
+    return HTMLResponse("\n".join(parts))
+
+
+@router.post("/auto-archive/accept-suggestion", response_class=HTMLResponse)
+async def accept_suggestion(request: Request):
+    form = await request.form()
+    rule_type = form.get("rule_type", "sender_domains")
+    value = (form.get("value") or "").strip()
+
+    if not value:
+        return HTMLResponse('<div class="suggestion-row"><span class="status--error">Missing value</span></div>')
+
+    rules = load_rules()
+    existing = [r.lower() for r in rules.get(rule_type, [])]
+    if value.lower() not in existing:
+        rules.setdefault(rule_type, []).append(value)
+        save_rules(rules)
+
+    return HTMLResponse(
+        f'<div class="suggestion-row suggestion-row--added">'
+        f'<span class="suggestion-value">@{_html.escape(value)}</span>'
+        f'<span class="status--success" style="font-size:12px;">✓ Added to rules</span>'
+        f'</div>'
+    )
+
+
 # ── Rules editor ──────────────────────────────────────────────────────────────
 
 @router.get("/auto-archive", response_class=HTMLResponse)
