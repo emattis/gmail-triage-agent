@@ -98,11 +98,15 @@ def init_db() -> None:
             """
         )
 
-        # Migrate existing triage_items if task_suggestion_json column is missing
-        try:
-            conn.execute("ALTER TABLE triage_items ADD COLUMN task_suggestion_json TEXT")
-        except sqlite3.OperationalError:
-            pass  # Column already exists
+        # Migrations
+        for migration in [
+            "ALTER TABLE triage_items ADD COLUMN task_suggestion_json TEXT",
+            "ALTER TABLE triage_items ADD COLUMN original_category TEXT",
+        ]:
+            try:
+                conn.execute(migration)
+            except sqlite3.OperationalError:
+                pass  # Column already exists
 
 
 @contextmanager

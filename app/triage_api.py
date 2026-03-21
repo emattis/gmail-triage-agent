@@ -68,14 +68,15 @@ def run_triage(max_results: int = 20):
             task_suggestion = item.get("task_suggestion")
             draft_reply = item.get("draft_reply")
 
+            category = (item.get("category") or "").upper()
             conn.execute(
                 """
                 INSERT OR IGNORE INTO triage_items (
                     batch_id, message_id, thread_id, sender, subject, date, snippet,
-                    category, confidence, reason, suggested_labels_json, draft_reply,
-                    task_suggestion_json, approved, edited_draft_body, applied, applied_at
+                    category, original_category, confidence, reason, suggested_labels_json,
+                    draft_reply, task_suggestion_json, approved, edited_draft_body, applied, applied_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, 0, NULL)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, 0, NULL)
                 """,
                 (
                     batch_id,
@@ -85,7 +86,8 @@ def run_triage(max_results: int = 20):
                     item.get("subject") or "",
                     item.get("date") or "",
                     item.get("snippet") or "",
-                    (item.get("category") or "").upper(),
+                    category,
+                    category,  # original_category — never updated after this
                     float(item.get("confidence")) if item.get("confidence") is not None else None,
                     item.get("reason"),
                     json.dumps(suggested_labels) if suggested_labels is not None else None,

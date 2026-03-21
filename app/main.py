@@ -9,6 +9,7 @@ from app.inbox import router as inbox_router
 from app.triage_api import router as triage_router
 from app.triage_ui import router as triage_ui_router
 from app.auto_archive import router as auto_archive_router
+from app.analytics import router as analytics_router
 from app.db import init_db
 from app.scheduler import start_scheduler, shutdown_scheduler
 
@@ -29,6 +30,7 @@ app.include_router(inbox_router)
 app.include_router(triage_router)
 app.include_router(triage_ui_router)
 app.include_router(auto_archive_router)
+app.include_router(analytics_router)
 
 
 @app.get("/", response_class=HTMLResponse)

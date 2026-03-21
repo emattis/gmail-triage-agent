@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Analytics — Gmail Agent</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #F8FAFC; color: #0F172A;
+      font-size: 14px; line-height: 1.5; min-height: 100vh;
+    }
+
+    /* Header */
+    .header {
+      background: #FFFFFF; border-bottom: 1px solid #E2E8F0;
+      padding: 14px 24px; display: flex; align-items: center;
+      justify-content: space-between; position: sticky; top: 0; z-index: 10;
+    }
+    .header-left { display: flex; align-items: center; gap: 10px; }
+    .app-title { font-size: 16px; font-weight: 600; letter-spacing: -0.02em; }
+    .badge {
+      padding: 2px 8px; border-radius: 6px; font-size: 11px; font-weight: 500;
+      background: #F1F5F9; color: #64748B; text-transform: uppercase; letter-spacing: 0.03em;
+    }
+
+    /* Layout */
+    .main { max-width: 860px; margin: 0 auto; padding: 28px 20px 60px; }
+
+    .section { margin-bottom: 28px; }
+    .section-title {
+      font-size: 12px; font-weight: 600; text-transform: uppercase;
+      letter-spacing: 0.06em; color: #94A3B8; margin-bottom: 12px;
+    }
+
+    /* Stat cards */
+    .stat-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+    @media (max-width: 640px) { .stat-grid { grid-template-columns: repeat(2, 1fr); } }
+
+    .stat-card {
+      background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 12px;
+      padding: 18px 20px; box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+    }
+    .stat-num {
+      font-size: 32px; font-weight: 700; line-height: 1;
+      letter-spacing: -0.03em; margin-bottom: 5px;
+    }
+    .stat-label { font-size: 12px; color: #64748B; }
+    .stat-sub { font-size: 11px; color: #94A3B8; margin-top: 3px; }
+
+    /* Category breakdown */
+    .breakdown-card {
+      background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 12px;
+      padding: 20px; box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+    }
+    .breakdown-row { margin-bottom: 14px; }
+    .breakdown-row:last-child { margin-bottom: 0; }
+    .breakdown-meta {
+      display: flex; justify-content: space-between; align-items: baseline;
+      margin-bottom: 5px;
+    }
+    .breakdown-cat { font-size: 13px; font-weight: 600; }
+    .breakdown-count { font-size: 12px; color: #64748B; }
+    .bar-track {
+      height: 8px; background: #F1F5F9; border-radius: 99px; overflow: hidden;
+    }
+    .bar-fill {
+      height: 100%; border-radius: 99px;
+      transition: width 0.6s ease;
+    }
+
+    /* Two-column grid */
+    .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    @media (max-width: 560px) { .two-col { grid-template-columns: 1fr; } }
+
+    /* Accuracy card */
+    .accuracy-card {
+      background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 12px;
+      padding: 20px; box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+    }
+    .accuracy-big {
+      font-size: 48px; font-weight: 700; letter-spacing: -0.04em; line-height: 1;
+      color: #059669; margin-bottom: 4px;
+    }
+    .accuracy-big--na { color: #CBD5E1; font-size: 32px; }
+    .accuracy-desc { font-size: 13px; color: #64748B; margin-bottom: 14px; }
+    .accuracy-row {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 8px 0; border-top: 1px solid #F1F5F9; font-size: 13px;
+    }
+    .accuracy-row-label { color: #475569; }
+    .accuracy-row-val { font-weight: 600; }
+    .pill-agreed  { background: #D1FAE5; color: #065F46; padding: 2px 8px; border-radius: 20px; font-size: 11px; font-weight: 700; }
+    .pill-overridden { background: #FEF3C7; color: #92400E; padding: 2px 8px; border-radius: 20px; font-size: 11px; font-weight: 700; }
+
+    .na-note { font-size: 12px; color: #94A3B8; line-height: 1.5; }
+
+    /* Time saved card */
+    .time-card {
+      background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 12px;
+      padding: 20px; box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+    }
+    .time-big {
+      font-size: 48px; font-weight: 700; letter-spacing: -0.04em; line-height: 1;
+      color: #2563EB; margin-bottom: 4px;
+    }
+    .time-desc { font-size: 13px; color: #64748B; margin-bottom: 14px; }
+    .time-row {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 8px 0; border-top: 1px solid #F1F5F9; font-size: 13px;
+    }
+    .time-row-label { color: #475569; }
+    .time-row-val { font-weight: 600; }
+
+    /* Batch history */
+    .history-card {
+      background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 12px;
+      overflow: hidden; box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+    }
+    .history-row {
+      display: flex; align-items: center; gap: 12px;
+      padding: 11px 18px; border-bottom: 1px solid #F8FAFC;
+      font-size: 13px; flex-wrap: wrap;
+    }
+    .history-row:last-child { border-bottom: none; }
+    .history-date { color: #0F172A; font-weight: 500; min-width: 140px; }
+    .history-mode {
+      font-size: 10px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.05em; padding: 2px 7px; border-radius: 6px;
+      background: #F1F5F9; color: #64748B;
+    }
+    .history-mode--auto_archive { background: #FEF3C7; color: #92400E; }
+    .history-mode--claude { background: #EDE9FE; color: #5B21B6; }
+    .history-mode--llm { background: #DBEAFE; color: #1E40AF; }
+    .history-stats { color: #64748B; margin-left: auto; }
+
+    /* Buttons */
+    .btn {
+      padding: 8px 16px; border-radius: 8px; font-size: 13px; font-weight: 500;
+      cursor: pointer; border: 1px solid transparent; text-decoration: none;
+      display: inline-flex; align-items: center; gap: 4px;
+    }
+    .btn--outline { background: #fff; color: #374151; border-color: #D1D5DB; }
+    .btn--outline:hover { background: #F9FAFB; }
+
+    .empty { font-size: 13px; color: #94A3B8; padding: 24px 0; }
+  </style>
+</head>
+<body>
+
+  <header class="header">
+    <div class="header-left">
+      <span class="app-title">Gmail Triage</span>
+      <span class="badge">Analytics</span>
+    </div>
+    <a href="/triage/ui" class="btn btn--outline" style="padding:5px 12px;font-size:12px;">← Triage</a>
+  </header>
+
+  <main class="main">
+
+    <!-- ── Top stats ── -->
+    <div class="section">
+      <div class="section-title">Overview</div>
+      <div class="stat-grid">
+
+        <div class="stat-card">
+          <div class="stat-num">{{ this_week }}</div>
+          <div class="stat-label">Triaged this week</div>
+        </div>
+
+        <div class="stat-card">
+          <div class="stat-num">{{ all_time }}</div>
+          <div class="stat-label">Total triaged</div>
+          <div class="stat-sub">{{ total_approved }} approved · {{ auto_archived_total }} auto-archived</div>
+        </div>
+
+        <div class="stat-card">
+          {% if accuracy is not none %}
+          <div class="stat-num" style="color:#059669;">{{ accuracy }}%</div>
+          <div class="stat-label">AI accuracy</div>
+          <div class="stat-sub">{{ overrides }} override{{ 's' if overrides != 1 else '' }} from {{ accuracy_total }} decisions</div>
+          {% else %}
+          <div class="stat-num" style="color:#CBD5E1;">—</div>
+          <div class="stat-label">AI accuracy</div>
+          <div class="stat-sub">Accumulating data…</div>
+          {% endif %}
+        </div>
+
+        <div class="stat-card">
+          <div class="stat-num" style="color:#2563EB;">{{ time_saved }}</div>
+          <div class="stat-label">Est. time saved</div>
+          <div class="stat-sub">~2 min per email actioned</div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ── Category breakdown ── -->
+    <div class="section">
+      <div class="section-title">Category Breakdown — all approved decisions</div>
+      <div class="breakdown-card">
+        {% if categories %}
+          {% for c in categories %}
+          <div class="breakdown-row">
+            <div class="breakdown-meta">
+              <span class="breakdown-cat">{{ c.category }}</span>
+              <span class="breakdown-count">{{ c.count }} &nbsp;·&nbsp; {{ c.pct }}%</span>
+            </div>
+            <div class="bar-track">
+              <div class="bar-fill" style="width:{{ c.pct }}%; background:{{ c.color }};"></div>
+            </div>
+          </div>
+          {% endfor %}
+        {% else %}
+          <p class="empty">No approved decisions yet — approve some emails to see the breakdown.</p>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- ── Accuracy + Time saved ── -->
+    <div class="section two-col">
+
+      <div class="accuracy-card">
+        <div class="section-title">AI Accuracy</div>
+        {% if accuracy is not none %}
+          <div class="accuracy-big">{{ accuracy }}%</div>
+          <div class="accuracy-desc">of AI suggestions matched your final decision</div>
+          <div class="accuracy-row">
+            <span class="accuracy-row-label">Agreed with AI</span>
+            <span class="pill-agreed">{{ accuracy_total - overrides }}</span>
+          </div>
+          <div class="accuracy-row">
+            <span class="accuracy-row-label">Overridden</span>
+            <span class="pill-overridden">{{ overrides }}</span>
+          </div>
+          <div class="accuracy-row">
+            <span class="accuracy-row-label">Decisions tracked</span>
+            <span class="accuracy-row-val">{{ accuracy_total }}</span>
+          </div>
+        {% else %}
+          <div class="accuracy-big accuracy-big--na">—</div>
+          <div class="accuracy-desc">Tracking starts from your next triage run</div>
+          <p class="na-note">
+            Accuracy compares the AI's original suggestion to your final approved category.
+            Historical data predates this tracking column.
+          </p>
+        {% endif %}
+      </div>
+
+      <div class="time-card">
+        <div class="section-title">Time Saved</div>
+        <div class="time-big">{{ time_saved }}</div>
+        <div class="time-desc">estimated across all actioned emails</div>
+        <div class="time-row">
+          <span class="time-row-label">Emails actioned</span>
+          <span class="time-row-val">{{ auto_archived_total + total_approved }}</span>
+        </div>
+        <div class="time-row">
+          <span class="time-row-label">Auto-archived</span>
+          <span class="time-row-val">{{ auto_archived_total }}</span>
+        </div>
+        <div class="time-row">
+          <span class="time-row-label">Assumption</span>
+          <span class="time-row-val">2 min / email</span>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ── Batch history ── -->
+    <div class="section">
+      <div class="section-title">Recent Batches</div>
+      {% if batches %}
+      <div class="history-card">
+        {% for b in batches %}
+        <div class="history-row">
+          <span class="history-date">{{ b.created_at }}</span>
+          <span class="history-mode history-mode--{{ b.mode }}">{{ b.mode }}</span>
+          <span class="history-stats">
+            {{ b.total }} emails &nbsp;·&nbsp;
+            {{ b.approved }} approved &nbsp;·&nbsp;
+            {{ b.applied }} applied
+          </span>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <p class="empty">No batches yet.</p>
+      {% endif %}
+    </div>
+
+  </main>
+
+</body>
+</html>
