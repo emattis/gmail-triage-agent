@@ -9,6 +9,9 @@ from typing import Optional
 
 from fastapi import APIRouter, Request, HTTPException
 from fastapi.responses import RedirectResponse, HTMLResponse
+from fastapi.templating import Jinja2Templates
+
+_templates = Jinja2Templates(directory="app/templates")
 from google_auth_oauthlib.flow import Flow
 from google.oauth2.credentials import Credentials
 
@@ -82,9 +85,4 @@ def google_callback(request: Request):
     _token_store_path().parent.mkdir(parents=True, exist_ok=True)
     _token_store_path().write_text(json.dumps(token_data, indent=2))
 
-    return """
-    <h3>✅ Connected Gmail</h3>
-    <p>Token saved locally.</p>
-    <p><a href="/gmail/profile">Test Gmail Profile</a></p>
-    <p><a href="/">Back home</a></p>
-    """
+    return RedirectResponse("/triage/ui", status_code=302)
