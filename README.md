@@ -68,6 +68,61 @@ uvicorn app.main:app --host 127.0.0.1 --port 8000
 
 Open [http://127.0.0.1:8000](http://127.0.0.1:8000) and sign in with Google.
 
+## Deploying to Railway
+
+Railway runs this app as a normal persistent server — SQLite, background scheduler, and file-based OAuth tokens all work without changes.
+
+### 1. Create a Railway project
+
+1. Go to [railway.app](https://railway.app) and create a new project
+2. Connect your GitHub repo
+3. Railway auto-detects Python and uses the `Procfile` to start the server
+
+### 2. Add a persistent volume
+
+The `data/` directory holds the SQLite database and OAuth token. Without a volume it resets on every deploy.
+
+1. In your Railway service → **Volumes** → Add volume
+2. Mount path: `/app/data`
+
+### 3. Set environment variables
+
+In Railway → **Variables**, add:
+
+```
+GOOGLE_OAUTH_CLIENT_SECRETS=/app/data/client_secret.json
+OAUTH_REDIRECT_URI=https://your-app.railway.app/auth/google/callback
+TOKEN_STORE_PATH=/app/data/token.json
+DB_PATH=/app/data/app.db
+TRIAGE_MODE=gemini
+GEMINI_API_KEY=your_key
+ANTHROPIC_API_KEY=your_key   # only if using claude mode
+```
+
+### 4. Upload Google credentials
+
+After first deploy, upload your `client_secret.json` to the volume via Railway's shell:
+
+```bash
+# In Railway shell
+cat > /app/data/client_secret.json << 'EOF'
+{ ...paste your credentials JSON here... }
+EOF
+```
+
+### 5. Update Google OAuth redirect URI
+
+In Google Cloud Console → OAuth credentials → add your Railway URL:
+```
+https://your-app.railway.app/auth/google/callback
+```
+
+### 6. Sign in
+
+Visit `https://your-app.railway.app` and sign in with Google.
+
+---
+
 ## Pages
 
 | Route | Description |
