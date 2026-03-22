@@ -20,16 +20,6 @@ templates = Jinja2Templates(directory="app/templates")
 
 @router.get("/triage/ui", response_class=HTMLResponse)
 def triage_ui(request: Request, max_results: int = 20):
-    """Return the page shell immediately — cards load via HTMX."""
-    return templates.TemplateResponse(
-        "slate_shell.html",
-        {"request": request, "max_results": max_results},
-    )
-
-
-@router.get("/triage/load", response_class=HTMLResponse)
-def triage_load(request: Request, max_results: int = 20):
-    """Run triage and return the cards fragment for HTMX to swap in."""
     data = run_triage(max_results=max_results)
     return templates.TemplateResponse(
         "slate.html",

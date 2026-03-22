@@ -1,9 +1,7 @@
 from contextlib import asynccontextmanager
-from pathlib import Path
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
-from fastapi.templating import Jinja2Templates
 
 from app.oauth import router as oauth_router
 from app.gmail import router as gmail_router
@@ -14,8 +12,6 @@ from app.auto_archive import router as auto_archive_router
 from app.analytics import router as analytics_router
 from app.db import init_db
 from app.scheduler import start_scheduler, shutdown_scheduler
-
-templates = Jinja2Templates(directory="app/templates")
 
 
 @asynccontextmanager
@@ -38,9 +34,26 @@ app.include_router(analytics_router)
 
 
 @app.get("/", response_class=HTMLResponse)
-def home(request: Request):
-    token_path = Path("data/token.json")
-    connected = token_path.exists() and token_path.stat().st_size > 0
-    return templates.TemplateResponse(
-        "landing.html", {"request": request, "connected": connected}
-    )
+def home():
+    return """
+    <!doctype html><html><head><meta charset="utf-8">
+    <style>
+      body { font-family: system-ui, sans-serif; display: flex; flex-direction: column;
+             align-items: center; justify-content: center; min-height: 100vh;
+             background: #F8FAFC; margin: 0; color: #0F172A; }
+      h1 { font-size: 22px; font-weight: 600; margin-bottom: 8px; }
+      p { color: #64748B; font-size: 14px; margin-bottom: 24px; }
+      .links { display: flex; gap: 12px; }
+      a { padding: 9px 18px; border-radius: 8px; font-size: 14px; font-weight: 500;
+          text-decoration: none; border: 1px solid #E2E8F0; background: #fff; color: #0F172A; }
+      a.primary { background: #0F172A; color: #fff; border-color: #0F172A; }
+    </style></head>
+    <body>
+      <h1>Gmail Triage Agent</h1>
+      <p>AI-powered inbox management</p>
+      <div class="links">
+        <a href="/auth/google/start">Connect Gmail</a>
+        <a href="/triage/ui" class="primary">Open Triage ↗</a>
+      </div>
+    </body></html>
+    """
