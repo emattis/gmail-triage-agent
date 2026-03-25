@@ -41,7 +41,7 @@ def run_triage(max_results: int = 20):
     ]
 
     mode = _mode()
-    if mode in ("llm", "claude"):
+    if mode in ("llm", "gemini", "claude"):
         from app.llm import triage_with_llm
         raw_slate = triage_with_llm(emails)
     else:
