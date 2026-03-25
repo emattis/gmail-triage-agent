@@ -35,6 +35,17 @@ def _redirect_uri() -> str:
     return _env("OAUTH_REDIRECT_URI")
 
 def _make_flow(state: Optional[str] = None) -> Flow:
+    # If GOOGLE_OAUTH_CLIENT_SECRETS_JSON env var exists, use it directly
+    secrets_json = os.getenv("GOOGLE_OAUTH_CLIENT_SECRETS_JSON")
+    if secrets_json:
+        client_config = json.loads(secrets_json)
+        return Flow.from_client_config(
+            client_config,
+            scopes=SCOPES,
+            redirect_uri=_redirect_uri(),
+            state=state,
+        )
+    # Otherwise fall back to file path
     return Flow.from_client_secrets_file(
         _client_secrets_path(),
         scopes=SCOPES,
